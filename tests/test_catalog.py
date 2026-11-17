@@ -31,7 +31,9 @@ class CatalogTests(unittest.TestCase):
                  "downloadURL": "https://example.test/example.ipa",
                  "localizedDescription": "This description should be in details only"},
                 {"name": "Application Demo", "bundleIdentifier": "com.example.demo",
-                 "versions": [{"version": "2.0", "downloadURL": "https://example.test/demo.ipa"}]}
+                 "versions": [{"version": "2.0", "downloadURL": "https://example.test/demo.ipa"}]},
+                {"name": "Example App Variant", "bundleIdentifier": "com.example.app",
+                 "downloadURL": "https://example.test/example-variant.ipa"}
             ]}
             (root / "fixture.json").write_text(json.dumps(feed))
             sources = root / "sources.json"
@@ -39,13 +41,13 @@ class CatalogTests(unittest.TestCase):
                 "id": "fixture", "name": "Fixture", "url": "https://fixture.test/"
             }]}))
             result = build(config_path=sources, output=root / "site/api", fixtures=root)
-            self.assertEqual(result["totalApps"], 2)
+            self.assertEqual(result["totalApps"], 3)
             api = root / "site/api"
             cards = json.loads((api / "pages/000000.json").read_text())["items"]
-            self.assertEqual(len(cards), 2)
+            self.assertEqual(len(cards), 3)
             self.assertNotIn("localizedDescription", cards[0])
             details = json.loads((api / "details/000000.json").read_text())["items"]
-            self.assertEqual(len(details), 2)
+            self.assertEqual(len(details), 3)
             self.assertTrue(any(item["localizedDescription"] for item in details))
             self.assertTrue((api / "search/617070/000000.json").exists())
             self.assertTrue((api / "home.json").exists())
