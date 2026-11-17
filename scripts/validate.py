@@ -46,6 +46,25 @@ home = load(root / manifest["homePath"])
 assert home["schemaVersion"] == 2
 assert home["items"] == first_page
 
+bootstrap = load(root / "bootstrap.json")
+assert bootstrap["schemaVersion"] == 2
+assert bootstrap["totalApps"] == total
+assert bootstrap["items"] == first_page
+for source_id, count in manifest["sources"].items():
+    source_dir = root / "sources" / source_id
+    source_manifest = load(source_dir / "manifest.json")
+    assert source_manifest["totalApps"] == count
+    assert source_manifest["pageCount"] == (count + 49) // 50
+    seen = set()
+    for page in range(source_manifest["pageCount"]):
+        payload = load(source_dir / f"{page:06d}.json")
+        assert payload["sourceId"] == source_id
+        assert payload["page"] == page
+        for item in payload["items"]:
+            assert item["sourceId"] == source_id
+            assert item["id"] in ids and item["id"] not in seen
+            seen.add(item["id"])
+    assert len(seen) == count
 search = load(root / manifest["searchIndexPath"])
 assert search["schemaVersion"] == 2
 assert search["minQueryLength"] == 3
