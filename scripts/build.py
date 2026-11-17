@@ -143,6 +143,7 @@ def build(config_path=None, output=None, fixtures=None):
         db = sqlite3.connect(os.path.join(tmp, "catalog.db"))
         db.execute("CREATE TABLE apps(id TEXT PRIMARY KEY, title TEXT NOT NULL, card TEXT NOT NULL, detail TEXT NOT NULL)")
         counts = {}
+        failures = {}
         for source in sources:
             validate_source(source)
             used = 0
@@ -150,30 +151,40 @@ def build(config_path=None, output=None, fixtures=None):
             before_count = db.execute("SELECT COUNT(*) FROM apps").fetchone()[0]
             source_fixture = pathlib.Path(fixtures) / (source["id"] + ".json") if fixtures else None
             db.execute("SAVEPOINT source")
-            for n, raw in enumerate(source_apps(source, source_fixture), start=1):
-                raw_seen = n
-                if n > MAX_APPS_PER_SOURCE:
-                    raise ValueError("Source exceeded app count limit")
-                app = normalize(source, raw)
-                if app:
-                    ident, title, card, detail = app
-                    previous = db.execute("SELECT card,detail FROM apps WHERE id=?", (ident,)).fetchone()
-                    if previous:
-                        old_card, old_detail = (json.loads(x) for x in previous)
-                        if rank(card, detail) <= rank(old_card, old_detail):
-                            used += 1
-                            continue
-                    db.execute("INSERT OR REPLACE INTO apps VALUES(?,?,?,?)", (
-                        ident, title, json.dumps(card, ensure_ascii=False),
-                        json.dumps(detail, ensure_ascii=False)))
-                    used += 1
-            if used == 0:
-                raise ValueError("Source has no usable apps: " + source["id"])
-            db.execute("RELEASE source")
+            try:
+                for n, raw in enumerate(source_apps(source, source_fixture), start=1):
+                    raw_seen = n
+                    if n > MAX_APPS_PER_SOURCE:
+                        raise ValueError("Source exceeded app count limit")
+                    app = normalize(source, raw)
+                    if app:
+                        ident, title, card, detail = app
+                        previous = db.execute("SELECT card,detail FROM apps WHERE id=?", (ident,)).fetchone()
+                        if previous:
+                            old_card, old_detail = (json.loads(x) for x in previous)
+                            if rank(card, detail) <= rank(old_card, old_detail):
+                                used += 1
+                                continue
+                        db.execute("INSERT OR REPLACE INTO apps VALUES(?,?,?,?)", (
+                            ident, title, json.dumps(card, ensure_ascii=False),
+                            json.dumps(detail, ensure_ascii=False)))
+                        used += 1
+                if used == 0:
+                    raise ValueError("Source has no usable apps: " + source["id"])
+                db.execute("RELEASE source")
+            except Exception as exc:
+                db.execute("ROLLBACK TO SAVEPOINT source")
+                db.execute("RELEASE SAVEPOINT source")
+                if source["id"] == "apptesters":
+                    raise
+                failures[source["id"]] = str(exc)[:300]
+                print(f"WARNING: skipped {source['id']}: {exc}", flush=True)
+                continue
             unique_count = db.execute("SELECT COUNT(*) FROM apps").fetchone()[0] - before_count
             print(f"{source['id']}: raw={raw_seen}, valid={used}, unique={unique_count}", flush=True)
             counts[source["id"]] = unique_count
         db.commit()
+        emit(output / "source-status.json", {"schemaVersion": 2, "active": counts, "failed": failures})
         total = db.execute("SELECT count(*) FROM apps").fetchone()[0]
         pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
         cursor = db.execute("SELECT card,detail FROM apps ORDER BY title,id")
