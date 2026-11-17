@@ -35,6 +35,17 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("Copyright 2026", detail["localizedDescription"])
         self.assertNotIn("Original app page:", detail["localizedDescription"])
 
+    def test_inline_original_page_boilerplate(self):
+        source = {"id": "ipaomtk", "url": "https://example.test/feed.json"}
+        raw = {
+            "name": "Calculator", "downloadURL": "https://example.test/c.ipa",
+            "subtitle": "Calculator. Listed by IPAOMTK.",
+            "localizedDescription": "Calculator. Listed by IPAOMTK. Original app page: https://ipaomtk.com/not-boring-calculator/"
+        }
+        _, _, card, detail = normalize(source, raw)
+        self.assertEqual(card["subtitle"], "Calculator.")
+        self.assertEqual(detail["localizedDescription"], "Calculator.")
+
     def test_streaming_apps(self):
         raw = json.dumps({"name": "Test", "apps": [
             {"name": "First", "bundleIdentifier": "first"},
