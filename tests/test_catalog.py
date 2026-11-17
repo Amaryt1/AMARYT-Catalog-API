@@ -43,13 +43,13 @@ class CatalogTests(unittest.TestCase):
                 "id": "fixture", "name": "Fixture", "url": "https://fixture.test/"
             }]}))
             result = build(config_path=sources, output=root / "site/api", fixtures=root)
-            self.assertEqual(result["totalApps"], 2)
+            self.assertEqual(result["totalApps"], 3)
             api = root / "site/api"
             cards = json.loads((api / "pages/000000.json").read_text())["items"]
-            self.assertEqual(len(cards), 2)
+            self.assertEqual(len(cards), 3)
             self.assertNotIn("localizedDescription", cards[0])
             details = json.loads((api / "details/000000.json").read_text())["items"]
-            self.assertEqual(len(details), 2)
+            self.assertEqual(len(details), 3)
             self.assertTrue(any(item["localizedDescription"] for item in details))
             self.assertTrue((api / "search/617070/000000.json").exists())
             self.assertTrue((api / "home.json").exists())
