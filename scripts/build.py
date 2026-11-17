@@ -9,6 +9,11 @@ import sqlite3
 import tempfile
 import unicodedata
 import urllib.request
+
+try:
+    from scripts.stream_json import iter_apps
+except ModuleNotFoundError:
+    from stream_json import iter_apps
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -42,7 +47,7 @@ def normalize(source, app):
     if not bundle or not name:
         return None
     versions = app.get("versions") if isinstance(app.get("versions"), list) else []
-    latest = next((v for v in versions if isinstance(v, dict)), {})
+    latest = next((v for v in versions if isinstance(v, dict) and v.get("downloadURL")), {})
     ipa = safe_url(app.get("downloadURL")) or safe_url(latest.get("downloadURL"))
     if not ipa:
         return None
@@ -99,8 +104,7 @@ class LimitedReader:
 
 
 def source_apps(source, fixture=None):
-    """ijson streams items instead of building a 10k+-app Python list."""
-    import ijson
+    """Yield one app at a time without loading full source JSON."""
     if fixture is not None:
         stream = open(fixture, "rb")
     else:
@@ -109,7 +113,7 @@ def source_apps(source, fixture=None):
         })
         stream = urllib.request.urlopen(req, timeout=120)
     with stream:
-        yield from ijson.items(LimitedReader(stream), "apps.item", use_float=True)
+        yield from iter_apps(LimitedReader(stream))
 
 
 def validate_source(source):
