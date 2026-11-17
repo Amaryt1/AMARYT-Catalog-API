@@ -40,9 +40,9 @@ def safe_url(value):
 # Remove only known, generated listing boilerplate. Preserve genuine app descriptions,
 # licensing notices, and original source provenance in sourceId/sourceURL.
 _LISTING_BOILERPLATE = (
-    re.compile(r"^\\s*[^\\n]{1,180}?\\.\\s+Listed by (?:IPAOMTK|iOSVizor)\\.\\s*$", re.I),
-    re.compile(r"^\\s*Listed by (?:IPAOMTK|iOSVizor)\\.\\s*$", re.I),
-    re.compile(r"^\\s*Original app page:\\s*https?://(?:www\\.)?(?:ipaomtk\\.com|iosvizor\\.com)/\\S*\\s*$", re.I),
+    re.compile(r"^\s*[^\n]{1,180}?\.\s+Listed by (?:IPAOMTK|iOSVizor)\.\s*$", re.I),
+    re.compile(r"^\s*Listed by (?:IPAOMTK|iOSVizor)\.\s*$", re.I),
+    re.compile(r"^\s*Original app page:\s*https?://(?:www\.)?(?:ipaomtk\.com|iosvizor\.com)/\S*\s*$", re.I),
 )
 
 
@@ -54,13 +54,13 @@ def clean_listing_description(value, limit=30000):
     # Upstream generators sometimes place a title + attribution on one line.
     cleaned = []
     for line in lines:
-        line = re.sub(r"\\s+Listed by (?:IPAOMTK|iOSVizor)\\.(?=\\s|$)", "", line, flags=re.I)
+        line = re.sub(r"\s+Listed by (?:IPAOMTK|iOSVizor)\.(?=\s|$)", "", line, flags=re.I)
         if any(pattern.fullmatch(line) for pattern in _LISTING_BOILERPLATE):
             continue
-        if re.fullmatch(r"\\s*Original app page:\\s*https?://(?:www\\.)?(?:ipaomtk\\.com|iosvizor\\.com)/\\S*\\s*", line, re.I):
+        if re.fullmatch(r"\s*Original app page:\s*https?://(?:www\.)?(?:ipaomtk\.com|iosvizor\.com)/\S*\s*", line, re.I):
             continue
         cleaned.append(line.rstrip())
-    return "\\n".join(cleaned).strip()
+    return "\n".join(cleaned).strip()
 
 
 def normalize_word(value):
@@ -108,13 +108,13 @@ def normalize(source, app):
         "id": app_id, "sourceId": sid, "name": name,
         "bundleIdentifier": bundle, "iconURL": icon,
         "developerName": clean(app.get("developerName"), 256),
-        "subtitle": clean_listing_description(app.get("subtitle"), 300),
+        "subtitle": (clean_listing_description(app.get("subtitle"), 300) if sid in ("ipaomtk", "iosvizor") else clean(app.get("subtitle"), 300)),
         "version": version, "versionDate": clean(app.get("versionDate") or latest.get("date"), 100),
         "category": category
     }
     detail = {
         **summary, "sourceURL": source["url"], "downloadURL": ipa,
-        "localizedDescription": clean_listing_description(app.get("localizedDescription") or app.get("description"), 30000),
+        "localizedDescription": (clean_listing_description(app.get("localizedDescription") or app.get("description"), 30000) if sid in ("ipaomtk", "iosvizor") else clean(app.get("localizedDescription") or app.get("description"), 30000)),
         "screenshotURLs": [u for x in raw_screens[:30] if (u := safe_url(x))],
         "minOSVersion": clean(app.get("minOSVersion"), 100),
         "size": app.get("size") if type(app.get("size")) is int and 0 <= app["size"] <= 10**12 else None,
