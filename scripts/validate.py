@@ -1,26 +1,67 @@
 #!/usr/bin/env python3
-"""Verify a complete static catalog before uploading a Pages artifact."""
+"""Validate every generated catalog page and search bucket before deployment."""
 import json
 from pathlib import Path
 
 root = Path("site/api")
-manifest = json.loads((root / "manifest.json").read_text())
+
+def load(path):
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+manifest = load(root / "manifest.json")
 assert manifest["schemaVersion"] == 2
-assert manifest["totalApps"] > 0 and manifest["pageCount"] > 0
-assert 20 <= manifest["pageSize"] <= 500
-assert (root / manifest["homePath"]).is_file()
+assert manifest["totalApps"] > 0
+assert manifest["pageSize"] == 50
+assert manifest["pageCount"] == (manifest["totalApps"] + 49) // 50
+assert sum(manifest["sources"].values()) == manifest["totalApps"]
+assert all(count > 0 for count in manifest["sources"].values())
+
+ids = set()
 total = 0
+first_page = None
 for number in range(manifest["pageCount"]):
-    cards = json.loads((root / f"pages/{number:06d}.json").read_text())
-    detail = json.loads((root / f"details/{number:06d}.json").read_text())
-    assert cards["schemaVersion"] == detail["schemaVersion"] == 2
+    cards = load(root / f"pages/{number:06d}.json")
+    details = load(root / f"details/{number:06d}.json")
+    assert cards["schemaVersion"] == details["schemaVersion"] == 2
+    assert cards["page"] == details["page"] == number
+    assert cards["next"] == (f"{number+1:06d}" if number+1 < manifest["pageCount"] else None)
     assert 0 < len(cards["items"]) <= manifest["pageSize"]
-    assert len(cards["items"]) == len(detail["items"])
-    assert [a["id"] for a in cards["items"]] == [a["id"] for a in detail["items"]]
+    if number < manifest["pageCount"] - 1:
+        assert len(cards["items"]) == manifest["pageSize"]
+    assert len(cards["items"]) == len(details["items"])
+    if first_page is None:
+        first_page = cards["items"]
+    for card, detail in zip(cards["items"], details["items"]):
+        assert card["id"] == detail["id"]
+        assert card["id"] not in ids, f"Duplicate app id: {card['id']}"
+        ids.add(card["id"])
+        assert card["detailPath"] == f"details/{number:06d}.json"
+        assert card["sourceId"] in manifest["sources"]
+        assert card["name"] and card["bundleIdentifier"]
+        assert detail["downloadURL"].startswith(("https://", "http://"))
     total += len(cards["items"])
-assert total == manifest["totalApps"], (total, manifest["totalApps"])
-search = json.loads((root / manifest["searchIndexPath"]).read_text())
+assert total == manifest["totalApps"]
+home = load(root / manifest["homePath"])
+assert home["schemaVersion"] == 2
+assert home["items"] == first_page
+
+search = load(root / manifest["searchIndexPath"])
 assert search["schemaVersion"] == 2
-for item in search["buckets"].values():
-    assert (root / f"search/{item['key']}/000000.json").is_file()
-print(f"Validated {total} apps and {manifest['pageCount']} pages.")
+assert search["minQueryLength"] == 3
+for prefix, bucket in search["buckets"].items():
+    assert bucket["count"] > 0
+    assert bucket["pages"] == (bucket["count"] + 49) // 50
+    assert bucket["key"] == prefix.encode("utf-8").hex()
+    bucket_ids = set()
+    for page in range(bucket["pages"]):
+        payload = load(root / f"search/{bucket['key']}/{page:06d}.json")
+        assert payload["schemaVersion"] == 2
+        assert payload["prefix"] == prefix and payload["page"] == page
+        assert 0 < len(payload["items"]) <= 50
+        for item in payload["items"]:
+            assert item["id"] in ids
+            assert item["id"] not in bucket_ids
+            bucket_ids.add(item["id"])
+    assert len(bucket_ids) == bucket["count"], (prefix, len(bucket_ids), bucket["count"])
+print(f"Validated {total} unique apps, {manifest['pageCount']} pages, and {len(search['buckets'])} search buckets.")
