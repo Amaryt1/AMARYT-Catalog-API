@@ -53,13 +53,13 @@ class CatalogTests(unittest.TestCase):
     def test_bad_source_fails_without_empty_publish(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            (root / "fixture.test.json").write_text('{"apps":[]}')
+            (root / "fixture.json").write_text('{"apps":[]}')
             sources = root / "sources.json"
             sources.write_text(json.dumps({"sources": [{
                 "id": "fixture", "url": "https://fixture.test/"
             }]}))
             with self.assertRaises(ValueError):
-                build(sources, root / "site", 20, fixture_dir=root)
+                build(config_path=sources, output=root / "site/api", fixtures=root)
 
 
 if __name__ == "__main__":
