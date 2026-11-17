@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Precompute a paginated static catalog; this runs on GitHub Actions, never iOS."""
 import hashlib
+import shutil
 import json
 import os
 import pathlib
@@ -130,6 +131,9 @@ def build(config_path=None, output=None, fixtures=None):
     config_path = pathlib.Path(config_path or ROOT / "sources.json")
     output = pathlib.Path(output or OUT)
     sources = json.loads(config_path.read_text(encoding="utf-8"))["sources"]
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True, exist_ok=True)
     sources = [s for s in sources if s.get("enabled", True)]
     if not sources or len({s.get("id") for s in sources}) != len(sources):
         raise ValueError("At least one source and unique source IDs required")
@@ -207,6 +211,31 @@ def build(config_path=None, output=None, fixtures=None):
             "homePath": "home.json", "pagePattern": "pages/{page:06d}.json",
             "detailPattern": "details/{page:06d}.json",
             "searchIndexPath": "search/index.json", "sources": counts}
+
+        # One-request bootstrap payload, keeping the existing v2 endpoints intact.
+        emit(output / "bootstrap.json", {
+            "schemaVersion": 2, "generatedAt": manifest["generatedAt"],
+            "totalApps": total, "pageSize": PAGE_SIZE, "pageCount": pages,
+            "items": json.loads((output / "home.json").read_text(encoding="utf-8"))["items"]
+        })
+        # Independent paginated source catalogs.
+        for sid, count in counts.items():
+            source_dir = output / "sources" / sid
+            source_cursor = db.execute(
+                "SELECT card FROM apps WHERE json_extract(card, '$.sourceId')=? ORDER BY title,id", (sid,))
+            source_pages = (count + PAGE_SIZE - 1) // PAGE_SIZE
+            for page in range(source_pages):
+                cards = [json.loads(row[0]) for row in source_cursor.fetchmany(PAGE_SIZE)]
+                emit(source_dir / f"{page:06d}.json", {
+                    "schemaVersion": 2, "sourceId": sid, "page": page,
+                    "items": cards,
+                    "next": f"{page+1:06d}" if page+1 < source_pages else None
+                })
+            emit(source_dir / "manifest.json", {
+                "schemaVersion": 2, "sourceId": sid, "totalApps": count,
+                "pageSize": PAGE_SIZE, "pageCount": source_pages,
+                "firstPagePath": "000000.json"
+            })
         emit(output / "manifest.json", manifest)
         (output.parent / ".nojekyll").touch()
         db.close()
