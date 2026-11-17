@@ -16,7 +16,7 @@ class CatalogTests(unittest.TestCase):
         raw = {
             "name": "#DRIVE", "downloadURL": "https://example.test/drive.ipa",
             "subtitle": "#DRIVE. Listed by IPAOMTK.",
-            "localizedDescription": "#DRIVE. Listed by IPAOMTK.\\nOriginal app page: https://ipaomtk.com/drive/"
+            "localizedDescription": "#DRIVE. Listed by IPAOMTK.\nOriginal app page: https://ipaomtk.com/drive/"
         }
         _, _, card, detail = normalize(source, raw)
         self.assertEqual(card["subtitle"], "#DRIVE.")
@@ -28,7 +28,7 @@ class CatalogTests(unittest.TestCase):
         source = {"id": "iosvizor", "url": "https://example.test/feed.json"}
         raw = {
             "name": "Example", "downloadURL": "https://example.test/a.ipa",
-            "localizedDescription": "A fun game.\\nCopyright 2026 Example Studio. All rights reserved.\\nOriginal app page: https://iosvizor.com/games/example/"
+            "localizedDescription": "A fun game.\nCopyright 2026 Example Studio. All rights reserved.\nOriginal app page: https://iosvizor.com/games/example/"
         }
         _, _, _, detail = normalize(source, raw)
         self.assertIn("A fun game.", detail["localizedDescription"])
