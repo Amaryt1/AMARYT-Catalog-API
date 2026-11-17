@@ -43,13 +43,13 @@ class CatalogTests(unittest.TestCase):
                 "id": "fixture", "name": "Fixture", "url": "https://fixture.test/"
             }]}))
             result = build(config_path=sources, output=root / "site/api", fixtures=root)
-            self.assertEqual(result["totalApps"], 3)
+            self.assertEqual(result["totalApps"], 2)
             api = root / "site/api"
             cards = json.loads((api / "pages/000000.json").read_text())["items"]
-            self.assertEqual(len(cards), 3)
+            self.assertEqual(len(cards), 2)
             self.assertNotIn("localizedDescription", cards[0])
             details = json.loads((api / "details/000000.json").read_text())["items"]
-            self.assertEqual(len(details), 3)
+            self.assertEqual(len(details), 2)
             self.assertTrue(any(item["localizedDescription"] for item in details))
             self.assertTrue((api / "search/617070/000000.json").exists())
             self.assertTrue((api / "home.json").exists())
@@ -79,6 +79,28 @@ class CatalogTests(unittest.TestCase):
             validator = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "validate.py"
             result = subprocess.run([sys.executable, str(validator)], cwd=root, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_latest_version_wins_even_if_old_record_comes_last(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            apps = [
+                {"name": "Demo", "bundleIdentifier": "com.demo",
+                 "version": "1.2", "versionDate": "2026-01-01",
+                 "downloadURL": "https://example.test/old.ipa"},
+                {"name": "Demo", "bundleIdentifier": "com.demo",
+                 "version": "2.0", "versionDate": "2026-02-01",
+                 "downloadURL": "https://example.test/new.ipa"},
+                {"name": "Demo", "bundleIdentifier": "com.demo",
+                 "version": "1.0", "versionDate": "2026-03-01",
+                 "downloadURL": "https://example.test/older.ipa"},
+            ]
+            (root / "fixture.json").write_text(json.dumps({"apps": apps}))
+            config = root / "sources.json"
+            config.write_text(json.dumps({"sources": [{"id": "fixture", "url": "https://fixture.test/"}]}))
+            manifest = build(config_path=config, output=root / "site/api", fixtures=root)
+            self.assertEqual(manifest["totalApps"], 1)
+            detail = json.loads((root / "site/api/details/000000.json").read_text())["items"][0]
+            self.assertEqual(detail["downloadURL"], "https://example.test/new.ipa")
 
     def test_bad_source_fails_without_empty_publish(self):
         with tempfile.TemporaryDirectory() as directory:
