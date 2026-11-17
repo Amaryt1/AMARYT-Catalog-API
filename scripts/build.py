@@ -13,8 +13,10 @@ import urllib.request
 
 try:
     from scripts.stream_json import iter_apps
+    from scripts.dedupe import rank
 except ModuleNotFoundError:
     from stream_json import iter_apps
+    from dedupe import rank
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -53,7 +55,7 @@ def normalize(source, app):
     if not ipa:
         return None
     sid = source["id"]
-    app_id = hashlib.sha256((sid + "\0" + bundle.casefold() + "\0" + name.casefold() + "\0" + ipa).encode()).hexdigest()[:24]
+    app_id = hashlib.sha256((sid + "\0" + bundle.casefold() + "\0" + normalize_word(name)).encode()).hexdigest()[:24]
     icon = safe_url(app.get("iconURL"))
     version = clean(app.get("version") or latest.get("version"), 100)
     raw_screens = app.get("screenshotURLs") or []
@@ -155,6 +157,12 @@ def build(config_path=None, output=None, fixtures=None):
                 app = normalize(source, raw)
                 if app:
                     ident, title, card, detail = app
+                    previous = db.execute("SELECT card,detail FROM apps WHERE id=?", (ident,)).fetchone()
+                    if previous:
+                        old_card, old_detail = (json.loads(x) for x in previous)
+                        if rank(card, detail) <= rank(old_card, old_detail):
+                            used += 1
+                            continue
                     db.execute("INSERT OR REPLACE INTO apps VALUES(?,?,?,?)", (
                         ident, title, json.dumps(card, ensure_ascii=False),
                         json.dumps(detail, ensure_ascii=False)))
