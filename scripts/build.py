@@ -37,31 +37,34 @@ def safe_url(value):
     return value if parts.scheme in ("http", "https") and parts.netloc else ""
 
 
-# Remove only known, generated listing boilerplate. Preserve genuine app descriptions,
-# licensing notices, and original source provenance in sourceId/sourceURL.
-_LISTING_BOILERPLATE = (
-    re.compile(r"^\s*[^\n]{1,180}?\.\s+Listed by (?:IPAOMTK|iOSVizor)\.\s*$", re.I),
-    re.compile(r"^\s*Listed by (?:IPAOMTK|iOSVizor)\.\s*$", re.I),
-    re.compile(r"^\s*Original app page:\s*https?://(?:www\.)?(?:ipaomtk\.com|iosvizor\.com)/\S*\s*$", re.I),
+# Clean display-only descriptions across all feeds. Keep provenance, download URLs,
+# icon URLs and other functional metadata untouched.
+_SOURCE_NAMES = r"(?:IPAOMTK|iOSVizor|AppTesters|AltMaker|Ittza7aa|HeyFordy|IPA Library|Wuxu)"
+_URL_PATTERN = re.compile(r"(?i)(?:https?://|www\\.)[^\\s<>\\]\\[\\)\\(\\\"']+")
+_ATTRIBUTION_PATTERN = re.compile(
+    rf"(?im)^\\s*(?:(?:listed|provided|uploaded|shared|sourced|published)\\s+by|"
+    rf"(?:source|repository|repo|original app page|website|visit us|follow us)\\s*:)\\s*"
+    rf"{_SOURCE_NAMES}?(?:\\s*[:\\-]\\s*.*)?\\s*$"
 )
+_INLINE_CREDIT = re.compile(
+    rf"(?i)\\s*(?:[.\\-]\\s*)?(?:listed|provided|uploaded|shared|sourced|published)\\s+by\\s+{_SOURCE_NAMES}\\s*[.!]?"
+)
+_ORIGINAL_PAGE = re.compile(r"(?i)\\s*(?:original app page|source url|repo url|website)\\s*:\\s*")
+_BLANK_LINES = re.compile(r"\\n{3,}")
 
 
 def clean_listing_description(value, limit=30000):
     description = clean(value, limit)
     if not description:
         return ""
-    # Upstream listing generators put title, attribution and original-page URL
-    # in a single paragraph (sometimes with newlines, sometimes spaces).
-    # Strip only the exact boilerplate phrases for these two known sources.
-    description = re.sub(
-        r"\s*Original app page:\s*https?://(?:www\.)?(?:ipaomtk\.com|iosvizor\.com)/[^\s]*",
-        "", description, flags=re.I
-    )
-    description = re.sub(
-        r"\s*Listed by (?:IPAOMTK|iOSVizor)\.(?=\s|$)",
-        "", description, flags=re.I
-    )
-    return description.strip()
+    # Remove source promotions and links, whether inline or on separate lines.
+    description = _INLINE_CREDIT.sub("", description)
+    description = _ORIGINAL_PAGE.sub(" ", description)
+    description = _URL_PATTERN.sub("", description)
+    description = _ATTRIBUTION_PATTERN.sub("", description)
+    lines = [line.strip(" \\t-:|") for line in description.splitlines()]
+    description = "\\n".join(line for line in lines if line)
+    return _BLANK_LINES.sub("\\n\\n", description).strip()
 
 
 
@@ -110,13 +113,13 @@ def normalize(source, app):
         "id": app_id, "sourceId": sid, "name": name,
         "bundleIdentifier": bundle, "iconURL": icon,
         "developerName": clean(app.get("developerName"), 256),
-        "subtitle": (clean_listing_description(app.get("subtitle"), 300) if sid in ("ipaomtk", "iosvizor") else clean(app.get("subtitle"), 300)),
+        "subtitle": (clean_listing_description(app.get("subtitle"), 300)),
         "version": version, "versionDate": clean(app.get("versionDate") or latest.get("date"), 100),
         "category": category
     }
     detail = {
         **summary, "sourceURL": source["url"], "downloadURL": ipa,
-        "localizedDescription": (clean_listing_description(app.get("localizedDescription") or app.get("description"), 30000) if sid in ("ipaomtk", "iosvizor") else clean(app.get("localizedDescription") or app.get("description"), 30000)),
+        "localizedDescription": (clean_listing_description(app.get("localizedDescription") or app.get("description"), 30000)),
         "screenshotURLs": [u for x in raw_screens[:30] if (u := safe_url(x))],
         "minOSVersion": clean(app.get("minOSVersion"), 100),
         "size": app.get("size") if type(app.get("size")) is int and 0 <= app["size"] <= 10**12 else None,
