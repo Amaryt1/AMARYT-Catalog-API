@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
-"""Validate the generated API contract before publishing to GitHub Pages."""
+"""Verify a complete static catalog before uploading a Pages artifact."""
 import json
 from pathlib import Path
 
 root = Path("site/api")
 manifest = json.loads((root / "manifest.json").read_text())
-assert manifest["schemaVersion"] == 1
-assert manifest["totalApps"] > 0
-assert manifest["pageCount"] > 0
-assert len(manifest["pages"]) == manifest["pageCount"]
-page = json.loads((root / manifest["pages"][0]["path"]).read_text())
-assert len(page["items"]) > 0
-assert len(page["items"]) <= manifest["pageSize"]
-details = json.loads((root / page["items"][0]["detailPath"]).read_text())
-assert page["items"][0]["id"] in {x["id"] for x in details["items"]}
-assert (root / manifest["homePath"]).exists()
+assert manifest["schemaVersion"] == 2
+assert manifest["totalApps"] > 0 and manifest["pageCount"] > 0
+assert 20 <= manifest["pageSize"] <= 500
+assert (root / manifest["homePath"]).is_file()
+total = 0
+for number in range(manifest["pageCount"]):
+    cards = json.loads((root / f"pages/{number:06d}.json").read_text())
+    detail = json.loads((root / f"details/{number:06d}.json").read_text())
+    assert cards["schemaVersion"] == detail["schemaVersion"] == 2
+    assert 0 < len(cards["items"]) <= manifest["pageSize"]
+    assert len(cards["items"]) == len(detail["items"])
+    assert [a["id"] for a in cards["items"]] == [a["id"] for a in detail["items"]]
+    total += len(cards["items"])
+assert total == manifest["totalApps"], (total, manifest["totalApps"])
 search = json.loads((root / manifest["searchIndexPath"]).read_text())
-assert search["schemaVersion"] == 1
+assert search["schemaVersion"] == 2
 for item in search["buckets"].values():
-    assert (root / f"search/{item['key']}/000000.json").exists()
-print(f"Validated {manifest['totalApps']} apps; first page {len(page['items'])} cards.")
+    assert (root / f"search/{item['key']}/000000.json").is_file()
+print(f"Validated {total} apps and {manifest['pageCount']} pages.")
