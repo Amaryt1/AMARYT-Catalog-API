@@ -17,6 +17,9 @@ GitHub Actions downloads and streams AltStore-compatible sources into a temporar
 
 - api/manifest.json — totalApps, pageSize, pageCount and source counts. This stays small even for very large catalogs.
 - api/home.json — initial 50 app summaries.
+- api/bootstrap.json — manifest essentials and first 50 cards in one request (optional faster startup).
+- api/sources/<source-id>/manifest.json — per-source counts and page metadata.
+- api/sources/<source-id>/000000.json — per-source paginated cards.
 - api/pages/000000.json — paginated card summaries.
 - api/details/000000.json — full metadata for the corresponding cards, including IPA URL.
 - api/search/index.json — static name-prefix lookup map.
@@ -35,6 +38,10 @@ Python 3.12+ and standard library only. Run:
     python -m unittest discover -s tests -v
     python scripts/build.py
     python scripts/validate.py
+
+## Compatibility
+
+All existing schema v2 routes remain available. New endpoints are additive. No Feather or Mstoda changes are included. Source-specific cards contain summary fields; details remain available through the global pages/detail routes. Clients must opt in to the new endpoints to see startup gains.
 
 ## Limitations
 
