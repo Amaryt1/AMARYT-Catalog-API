@@ -57,6 +57,29 @@ class CatalogTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(validator)], cwd=root, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+
+    def test_multiple_pages_and_duplicate_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            apps = [
+                {"name": f"Example {n:03d}", "bundleIdentifier": f"org.example.{n}",
+                 "downloadURL": f"https://example.test/{n}.ipa"}
+                for n in range(103)
+            ]
+            apps.append(dict(apps[0]))
+            (root / "fixture.json").write_text(json.dumps({"apps": apps}))
+            config = root / "sources.json"
+            config.write_text(json.dumps({"sources": [{"id": "fixture", "url": "https://fixture.test/"}]}))
+            manifest = build(config_path=config, output=root / "site/api", fixtures=root)
+            self.assertEqual(manifest["totalApps"], 103)
+            self.assertEqual(manifest["pageCount"], 3)
+            self.assertEqual(manifest["sources"]["fixture"], 103)
+            api = root / "site/api"
+            self.assertEqual([len(json.loads((api / f"pages/{n:06d}.json").read_text())["items"]) for n in range(3)], [50, 50, 3])
+            validator = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "validate.py"
+            result = subprocess.run([sys.executable, str(validator)], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_bad_source_fails_without_empty_publish(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
