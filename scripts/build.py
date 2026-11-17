@@ -65,11 +65,11 @@ def normalize(source, app):
     # An absent bundle uses the IPA-derived fallback above, preventing name-only merges.
     variant_text = " ".join(clean(v.get("localizedDescription"), 300) for v in versions if isinstance(v, dict))
     variant_text += " " + clean(app.get("subtitle"), 300)
-    variant_match = re.search(r"(?i)\\b(?:upstream variant|variant|mod(?:ded)?|tweak(?:ed)?)\\s*[:=-]\\s*([^;\\n]{1,70})", variant_text)
+    variant_match = re.search(r"(?i)\b(?:upstream variant|variant|mod(?:ded)?|tweak(?:ed)?)\s*[:=-]\s*([^;\n]{1,70})", variant_text)
     variant = normalize_word(variant_match.group(1).strip()) if variant_match else ""
-    identity = sid + "\\0" + bundle.casefold() + "\\0" + normalize_word(name)
+    identity = sid + "\0" + bundle.casefold() + "\0" + normalize_word(name)
     if variant:
-        identity += "\\0variant:" + variant
+        identity += "\0variant:" + variant
     app_id = hashlib.sha256(identity.encode()).hexdigest()[:24]
     icon = safe_url(app.get("iconURL"))
     version = clean(app.get("version") or latest.get("version"), 100)
