@@ -140,9 +140,12 @@ def build(config_path=None, output=None, fixtures=None):
         for source in sources:
             validate_source(source)
             used = 0
+            raw_seen = 0
+            before_count = db.execute("SELECT COUNT(*) FROM apps").fetchone()[0]
             source_fixture = pathlib.Path(fixtures) / (source["id"] + ".json") if fixtures else None
             db.execute("SAVEPOINT source")
             for n, raw in enumerate(source_apps(source, source_fixture), start=1):
+                raw_seen = n
                 if n > MAX_APPS_PER_SOURCE:
                     raise ValueError("Source exceeded app count limit")
                 app = normalize(source, raw)
@@ -155,7 +158,9 @@ def build(config_path=None, output=None, fixtures=None):
             if used == 0:
                 raise ValueError("Source has no usable apps: " + source["id"])
             db.execute("RELEASE source")
-            counts[source["id"]] = used
+            unique_count = db.execute("SELECT COUNT(*) FROM apps").fetchone()[0] - before_count
+            print(f"{source['id']}: raw={raw_seen}, valid={used}, unique={unique_count}", flush=True)
+            counts[source["id"]] = unique_count
         db.commit()
         total = db.execute("SELECT count(*) FROM apps").fetchone()[0]
         pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
