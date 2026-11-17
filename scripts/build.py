@@ -40,7 +40,7 @@ def safe_url(value):
 # Clean display-only descriptions across all feeds. Keep provenance, download URLs,
 # icon URLs and other functional metadata untouched.
 _SOURCE_NAMES = r"(?:IPAOMTK|iOSVizor|AppTesters|AltMaker|Ittza7aa|HeyFordy|IPA Library|Wuxu)"
-_URL_PATTERN = re.compile(r"(?i)(?:https?://|www\.)[^\s<>\]\[\)\(\\"']+")
+_URL_PATTERN = re.compile(r'(?i)(?:https?://|www\\.)[^\\s<>]+')
 _ATTRIBUTION_PATTERN = re.compile(
     rf"(?im)^\s*(?:(?:listed|provided|uploaded|shared|sourced|published)\s+by|"
     rf"(?:source|repository|repo|original app page|website|visit us|follow us)\s*:)\s*"
