@@ -1,24 +1,54 @@
 name: Build and publish catalog
+
 on:
   workflow_dispatch:
   schedule:
     - cron: '17 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'sources.json'
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/publish.yml'
+
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
 concurrency:
   group: catalog-pages
   cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 100
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - name: Generate static API
-        run: python3 scripts/build.py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test streaming and catalog contract
+        run: python -m unittest discover -s tests -v
+      - name: Generate static API outside the app
+        run: python scripts/build.py
+      - name: Validate output
+        run: python scripts/validate.py
+      - name: Generated site size
+        run: du -sh site && find site -type f | wc -l
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - uses: actions/deploy-pages@v4
+        id: deployment
