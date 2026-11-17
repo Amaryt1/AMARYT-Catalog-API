@@ -11,6 +11,30 @@ from scripts.stream_json import iter_apps
 
 
 class CatalogTests(unittest.TestCase):
+    def test_generated_listing_boilerplate_is_removed_without_losing_provenance(self):
+        source = {"id": "ipaomtk", "url": "https://ipaomtk-source.shrubhub.workers.dev/ipaomtk.json"}
+        raw = {
+            "name": "#DRIVE", "downloadURL": "https://example.test/drive.ipa",
+            "subtitle": "#DRIVE. Listed by IPAOMTK.",
+            "localizedDescription": "#DRIVE. Listed by IPAOMTK.\\nOriginal app page: https://ipaomtk.com/drive/"
+        }
+        _, _, card, detail = normalize(source, raw)
+        self.assertEqual(card["subtitle"], "#DRIVE.")
+        self.assertEqual(detail["localizedDescription"], "#DRIVE.")
+        self.assertEqual(detail["sourceURL"], source["url"])
+        self.assertEqual(detail["downloadURL"], raw["downloadURL"])
+
+    def test_preserve_genuine_description_and_license_text(self):
+        source = {"id": "iosvizor", "url": "https://example.test/feed.json"}
+        raw = {
+            "name": "Example", "downloadURL": "https://example.test/a.ipa",
+            "localizedDescription": "A fun game.\\nCopyright 2026 Example Studio. All rights reserved.\\nOriginal app page: https://iosvizor.com/games/example/"
+        }
+        _, _, _, detail = normalize(source, raw)
+        self.assertIn("A fun game.", detail["localizedDescription"])
+        self.assertIn("Copyright 2026", detail["localizedDescription"])
+        self.assertNotIn("Original app page:", detail["localizedDescription"])
+
     def test_streaming_apps(self):
         raw = json.dumps({"name": "Test", "apps": [
             {"name": "First", "bundleIdentifier": "first"},
