@@ -47,7 +47,7 @@ _ATTRIBUTION_PATTERN = re.compile(
     rf"{_SOURCE_NAMES}?(?:\s*[:\-]\s*.*)?\s*$"
 )
 _INLINE_CREDIT = re.compile(
-    rf"(?i)\s*(?:[.\-]\s*)?(?:listed|provided|uploaded|shared|sourced|published)\s+by\s+{_SOURCE_NAMES}\s*[.!]?"
+    rf"(?i)\s*(?:listed|provided|uploaded|shared|sourced|published)\s+by\s+{_SOURCE_NAMES}\s*[.!]?"
 )
 _ORIGINAL_PAGE = re.compile(r"(?i)\s*(?:original app page|source url|repo url|website)\s*:\s*")
 _BLANK_LINES = re.compile(r"\n{3,}")
