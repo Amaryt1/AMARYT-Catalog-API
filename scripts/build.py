@@ -50,17 +50,19 @@ def clean_listing_description(value, limit=30000):
     description = clean(value, limit)
     if not description:
         return ""
-    lines = description.splitlines()
-    # Upstream generators sometimes place a title + attribution on one line.
-    cleaned = []
-    for line in lines:
-        line = re.sub(r"\s+Listed by (?:IPAOMTK|iOSVizor)\.(?=\s|$)", "", line, flags=re.I)
-        if any(pattern.fullmatch(line) for pattern in _LISTING_BOILERPLATE):
-            continue
-        if re.fullmatch(r"\s*Original app page:\s*https?://(?:www\.)?(?:ipaomtk\.com|iosvizor\.com)/\S*\s*", line, re.I):
-            continue
-        cleaned.append(line.rstrip())
-    return "\n".join(cleaned).strip()
+    # Upstream listing generators put title, attribution and original-page URL
+    # in a single paragraph (sometimes with newlines, sometimes spaces).
+    # Strip only the exact boilerplate phrases for these two known sources.
+    description = re.sub(
+        r"\s*Original app page:\s*https?://(?:www\.)?(?:ipaomtk\.com|iosvizor\.com)/[^\s]*",
+        "", description, flags=re.I
+    )
+    description = re.sub(
+        r"\s*Listed by (?:IPAOMTK|iOSVizor)\.(?=\s|$)",
+        "", description, flags=re.I
+    )
+    return description.strip()
+
 
 
 def normalize_word(value):
