@@ -1,6 +1,8 @@
 import io
 import json
 import pathlib
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -51,6 +53,9 @@ class CatalogTests(unittest.TestCase):
             self.assertTrue(any(item["localizedDescription"] for item in details))
             self.assertTrue((api / "search/617070/000000.json").exists())
             self.assertTrue((api / "home.json").exists())
+            validator = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "validate.py"
+            result = subprocess.run([sys.executable, str(validator)], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_bad_source_fails_without_empty_publish(self):
         with tempfile.TemporaryDirectory() as directory:
