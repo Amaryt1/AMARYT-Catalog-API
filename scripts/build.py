@@ -186,6 +186,8 @@ def build(config_path=None, output=None, fixtures=None):
         db.commit()
         emit(output / "source-status.json", {"schemaVersion": 2, "active": counts, "failed": failures})
         total = db.execute("SELECT count(*) FROM apps").fetchone()[0]
+        if total == 0:
+            raise ValueError("No usable apps from any configured source; refusing empty catalog publication")
         pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
         cursor = db.execute("SELECT card,detail FROM apps ORDER BY title,id")
         for page in range(pages):
