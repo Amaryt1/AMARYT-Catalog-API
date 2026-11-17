@@ -4,6 +4,41 @@
       "id": "apptesters",
       "url": "https://repository.apptesters.org/",
       "enabled": true
+    },
+    {
+      "id": "ipaomtk",
+      "url": "https://ipaomtk-source.shrubhub.workers.dev/ipaomtk.json",
+      "enabled": true
+    },
+    {
+      "id": "iosvizor",
+      "url": "https://iosvizor-source.shrubhub.workers.dev/iosvizor.json",
+      "enabled": true
+    },
+    {
+      "id": "altmaker",
+      "url": "https://raw.githubusercontent.com/RipeStore/altmaker/main/AltMaker.json",
+      "enabled": true
+    },
+    {
+      "id": "ittza7aa",
+      "url": "https://ittza7aa.com/repo.json",
+      "enabled": true
+    },
+    {
+      "id": "heyfordy",
+      "url": "https://repo.heyfordy.dev/apps.json",
+      "enabled": true
+    },
+    {
+      "id": "ipalibrary",
+      "url": "https://raw.githubusercontent.com/2nkn0w/ipalibrary.me-source/main/ipalibrary_source.json",
+      "enabled": true
+    },
+    {
+      "id": "wuxu",
+      "url": "https://wuxu1.github.io/wuxu-complete-plus.json",
+      "enabled": true
     }
   ]
 }
