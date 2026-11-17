@@ -1,262 +1,209 @@
 #!/usr/bin/env python3
-"""Build an API-style static catalog without loading huge source feeds into RAM."""
-import argparse
+"""Precompute a paginated static catalog; this runs on GitHub Actions, never iOS."""
 import hashlib
 import json
+import os
 import pathlib
 import re
 import sqlite3
 import tempfile
-import time
 import unicodedata
-import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
-
-try:
-    from scripts.stream_json import iter_apps
-except ModuleNotFoundError:
-    from stream_json import iter_apps
+from urllib.parse import urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+OUT = ROOT / "site" / "api"
 PAGE_SIZE = 50
-MAX_BYTES = 750 * 1024 * 1024
-MAX_APPS = 2_000_000
+MAX_APPS_PER_SOURCE = 2_000_000
+MAX_BYTES_PER_SOURCE = 750 * 1024 * 1024
 
-def short(value, limit=512):
+
+def clean(value, limit=300):
     return value.strip()[:limit] if isinstance(value, str) else ""
 
-def url(value):
-    value = short(value, 4096)
-    p = urllib.parse.urlsplit(value)
-    return value if p.scheme in ("https", "http") and p.netloc else ""
 
-def norm(value):
-    value = unicodedata.normalize("NFKD", value or "").casefold()
-    return " ".join("".join(x for x in value if unicodedata.category(x) != "Mn").split())
+def safe_url(value):
+    value = clean(value, 4096)
+    parts = urlsplit(value)
+    return value if parts.scheme in ("http", "https") and parts.netloc else ""
 
-def encoded(obj):
-    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
-def latest(raw):
-    versions = raw.get("versions")
-    if isinstance(versions, list):
-        return next((v for v in versions if isinstance(v, dict) and (v.get("downloadURL") or v.get("version"))), {})
-    return {}
+def normalize_word(value):
+    value = unicodedata.normalize("NFKD", value).casefold()
+    return "".join(c for c in value if unicodedata.category(c) != "Mn")
 
-def normalize(source, raw):
-    if not isinstance(raw, dict):
+
+def normalize(source, app):
+    if not isinstance(app, dict):
         return None
-    name = short(raw.get("name"), 256)
-    bundle = short(raw.get("bundleIdentifier") or raw.get("bundleId"), 512)
-    if not name or not bundle:
+    bundle = clean(app.get("bundleIdentifier") or app.get("bundleId"), 512)
+    name = clean(app.get("name"), 256)
+    if not bundle or not name:
         return None
-    ver = latest(raw)
-    ipa = url(raw.get("downloadURL")) or url(ver.get("downloadURL"))
+    versions = app.get("versions") if isinstance(app.get("versions"), list) else []
+    latest = next((v for v in versions if isinstance(v, dict)), {})
+    ipa = safe_url(app.get("downloadURL")) or safe_url(latest.get("downloadURL"))
     if not ipa:
         return None
-    ident = hashlib.sha256((source["id"] + "\0" + bundle.casefold()).encode()).hexdigest()[:24]
-    icon = url(raw.get("iconURL"))
-    cat = raw.get("category")
-    cat = short(cat, 100) if isinstance(cat, str) else ""
-    size = raw.get("size")
-    screenshots = raw.get("screenshotURLs") or []
-    if not isinstance(screenshots, list):
-        screenshots = []
-    versions = raw.get("versions") or []
-    if not isinstance(versions, list):
-        versions = []
-    card = {
-        "id": ident, "sourceId": source["id"], "name": name,
-        "subtitle": short(raw.get("subtitle"), 300),
-        "version": short(raw.get("version") or ver.get("version"), 100),
-        "versionDate": short(raw.get("versionDate") or ver.get("date") or ver.get("versionDate"), 100),
-        "iconURL": icon, "category": cat,
-        "developerName": short(raw.get("developerName"), 200),
+    sid = source["id"]
+    app_id = hashlib.sha256((sid + "\0" + bundle.casefold()).encode()).hexdigest()[:24]
+    icon = safe_url(app.get("iconURL"))
+    version = clean(app.get("version") or latest.get("version"), 100)
+    raw_screens = app.get("screenshotURLs") or []
+    if not isinstance(raw_screens, list):
+        raw_screens = []
+    raw_category = app.get("category")
+    category = clean(raw_category, 80) if isinstance(raw_category, str) else ""
+    summary = {
+        "id": app_id, "sourceId": sid, "name": name,
+        "bundleIdentifier": bundle, "iconURL": icon,
+        "developerName": clean(app.get("developerName"), 256),
+        "subtitle": clean(app.get("subtitle"), 300),
+        "version": version, "versionDate": clean(app.get("versionDate") or latest.get("date"), 100),
+        "category": category
     }
-    details = dict(card, bundleIdentifier=bundle,
-                   sourceName=source.get("name") or source["id"],
-                   sourceURL=source["url"],
-                   localizedDescription=short(raw.get("localizedDescription") or raw.get("description"), 30000),
-                   downloadURL=ipa,
-                   screenshotURLs=[u for item in screenshots[:30] if (u := url(item))],
-                   size=size if isinstance(size, int) and 0 <= size <= 10**12 else None,
-                   minOSVersion=short(raw.get("minOSVersion"), 80),
-                   versions=[{
-                       "version": short(v.get("version"), 100),
-                       "date": short(v.get("date") or v.get("versionDate"), 100),
-                       "downloadURL": url(v.get("downloadURL")),
-                       "localizedDescription": short(v.get("localizedDescription"), 4096)
-                   } for v in versions[:30] if isinstance(v, dict)])
-    return ident, norm(name), encoded(card), encoded(details)
+    detail = {
+        **summary, "sourceURL": source["url"], "downloadURL": ipa,
+        "localizedDescription": clean(app.get("localizedDescription") or app.get("description"), 30000),
+        "screenshotURLs": [u for x in raw_screens[:30] if (u := safe_url(x))],
+        "minOSVersion": clean(app.get("minOSVersion"), 100),
+        "size": app.get("size") if type(app.get("size")) is int and 0 <= app["size"] <= 10**12 else None,
+        "versions": [
+            {"version": clean(v.get("version"), 100),
+             "date": clean(v.get("date") or v.get("versionDate"), 100),
+             "downloadURL": safe_url(v.get("downloadURL"))}
+            for v in versions[:30] if isinstance(v, dict)
+        ]
+    }
+    return app_id, normalize_word(name), summary, detail
 
-class SizeLimited:
+
+def emit(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = (json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+    path.write_bytes(payload)
+    return hashlib.sha256(payload).hexdigest()
+
+
+class LimitedReader:
     def __init__(self, stream):
-        self.stream = stream
-        self.read_bytes = 0
+        self.stream, self.n = stream, 0
+
     def read(self, size=-1):
         data = self.stream.read(size)
-        self.read_bytes += len(data)
-        if self.read_bytes > MAX_BYTES:
-            raise ValueError("Source exceeds 750 MiB limit")
+        self.n += len(data)
+        if self.n > MAX_BYTES_PER_SOURCE:
+            raise ValueError("Source exceeded byte limit")
         return data
 
-def create_db(path):
-    db = sqlite3.connect(str(path))
-    db.executescript("""
-        CREATE TABLE apps(id TEXT PRIMARY KEY, source_id TEXT NOT NULL,
-            name_sort TEXT NOT NULL, card TEXT NOT NULL, detail TEXT NOT NULL);
-        CREATE INDEX idx_names ON apps(name_sort,id);
-        CREATE TABLE tokens(prefix TEXT NOT NULL, name_sort TEXT NOT NULL,
-            id TEXT NOT NULL, PRIMARY KEY(prefix,id)) WITHOUT ROWID;
-    """)
-    return db
 
-def ingest(db, source, fixture_dir=None):
-    sid = source.get("id", "")
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", sid):
-        raise ValueError("Invalid source id")
-    address = source.get("url", "")
-    if urllib.parse.urlsplit(address).scheme != "https":
-        raise ValueError(f"{sid}: only HTTPS source URLs are permitted")
-    for attempt in range(3):
-        began = False
-        try:
-            if fixture_dir:
-                filename = pathlib.Path(fixture_dir) / (urllib.parse.urlsplit(address).netloc + ".json")
-                incoming = filename.open("rb")
-            else:
-                req = urllib.request.Request(address, headers={
-                    "User-Agent": "AMARYT-Catalog/2.0", "Accept": "application/json"
-                })
-                incoming = urllib.request.urlopen(req, timeout=90)
-            with incoming:
-                if getattr(incoming, "headers", None):
-                    header = incoming.headers.get("Content-Length")
-                    if header and int(header) > MAX_BYTES:
-                        raise ValueError("Source too large")
-                db.execute("SAVEPOINT ingest")
-                began = True
-                processed = valid = 0
-                for raw in iter_apps(SizeLimited(incoming)):
-                    processed += 1
-                    if processed > MAX_APPS:
-                        raise ValueError("Source exceeds maximum app count")
-                    row = normalize(source, raw)
-                    if row is not None:
-                        ident, name_sort, card, detail = row
-                        db.execute("INSERT OR REPLACE INTO apps VALUES(?,?,?,?,?)",
-                                   (ident, sid, name_sort, card, detail))
-                        valid += 1
-                if valid == 0:
-                    raise ValueError("No valid apps: refusing empty deployment")
-                db.execute("RELEASE SAVEPOINT ingest")
-                print(f"{sid}: {valid}/{processed} usable apps", flush=True)
-                return valid
-        except Exception:
-            if began:
-                db.execute("ROLLBACK TO SAVEPOINT ingest")
-                db.execute("RELEASE SAVEPOINT ingest")
-            if attempt == 2 or fixture_dir:
-                raise
-            time.sleep(2 ** attempt)
-
-def output_json(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    content = encoded(data).encode("utf-8")
-    path.write_bytes(content)
-    return hashlib.sha256(content).hexdigest()
-
-def generate(db, root, status, page_size):
-    root = pathlib.Path(root)
-    out = root / "api"
-    total = db.execute("SELECT COUNT(*) FROM apps").fetchone()[0]
-    count = (total + page_size - 1) // page_size
-    if count == 0:
-        raise ValueError("Refusing to publish an empty catalog")
-    pages = []
-    cursor = db.execute("SELECT id, card, detail FROM apps ORDER BY name_sort,id")
-    for number in range(count):
-        rows = cursor.fetchmany(page_size)
-        detail_path = f"details/{number:06d}.json"
-        cards, details = [], []
-        for ident, card_json, detail_json in rows:
-            card = json.loads(card_json)
-            card["detailPath"] = detail_path
-            cards.append(card)
-            details.append(json.loads(detail_json))
-        name = f"{number:06d}.json"
-        digest = output_json(out / "pages" / name, {
-            "schemaVersion": 1, "page": number, "pageCount": count,
-            "next": f"{number+1:06d}" if number + 1 < count else None,
-            "items": cards
+def source_apps(source, fixture=None):
+    """ijson streams items instead of building a 10k+-app Python list."""
+    import ijson
+    if fixture is not None:
+        stream = open(fixture, "rb")
+    else:
+        req = urllib.request.Request(source["url"], headers={
+            "User-Agent": "AMARYT-Catalog/2.0", "Accept": "application/json"
         })
-        output_json(out / detail_path, {"schemaVersion": 1, "page": number, "items": details})
-        if number == 0:
-            output_json(out / "home.json", {"schemaVersion": 1, "items": cards})
-        pages.append({"path": "pages/" + name, "sha256": digest})
+        stream = urllib.request.urlopen(req, timeout=120)
+    with stream:
+        yield from ijson.items(LimitedReader(stream), "apps.item", use_float=True)
 
-    # Static name-token prefix index. NOT a dynamic server-side search API.
-    cursor = db.execute("SELECT id,name_sort,card FROM apps")
-    while rows := cursor.fetchmany(1000):
-        inserts = []
-        for ident, name_sort, card_json in rows:
-            name = json.loads(card_json)["name"]
-            words = re.findall(r"\w+", norm(name), flags=re.UNICODE)
-            for prefix in {w[:3] for w in words if len(w) >= 3}:
-                inserts.append((prefix, name_sort, ident))
-        db.executemany("INSERT OR IGNORE INTO tokens VALUES(?,?,?)", inserts)
-    db.execute("CREATE INDEX idx_tokens ON tokens(prefix,name_sort,id)")
-    search_index = {}
-    for prefix, hits in db.execute("SELECT prefix,COUNT(*) FROM tokens GROUP BY prefix ORDER BY prefix"):
-        key = prefix.encode("utf-8").hex()
-        shard_count = (hits + page_size - 1) // page_size
-        search_index[prefix] = {"key": key, "count": hits, "pages": shard_count}
-        cursor = db.execute("""SELECT a.card FROM tokens t JOIN apps a ON a.id=t.id
-                               WHERE t.prefix=? ORDER BY t.name_sort,t.id""", (prefix,))
-        for number in range(shard_count):
-            rows = [json.loads(row[0]) for row in cursor.fetchmany(page_size)]
-            output_json(out / f"search/{key}/{number:06d}.json", {
-                "schemaVersion": 1, "prefix": prefix, "page": number,
-                "pageCount": shard_count, "items": rows
-            })
-    output_json(out / "search/index.json", {
-        "schemaVersion": 1, "minQueryLength": 3,
-        "type": "static-name-token-prefix-candidates", "buckets": search_index
-    })
-    manifest = {
-        "schemaVersion": 1, "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "totalApps": total, "pageSize": page_size, "pageCount": count,
-        "homePath": "home.json", "searchIndexPath": "search/index.json",
-        "sources": status, "pages": pages
-    }
-    output_json(out / "manifest.json", manifest)
-    (root / ".nojekyll").touch()
-    return manifest
 
-def build(sources_file, output_dir, page_size=PAGE_SIZE, fixture_dir=None):
-    conf = json.loads(pathlib.Path(sources_file).read_text(encoding="utf-8"))
-    sources = [s for s in conf["sources"] if s.get("enabled", True)]
-    if not sources or len({s["id"] for s in sources}) != len(sources):
-        raise ValueError("No unique enabled sources")
-    with tempfile.TemporaryDirectory() as temp:
-        db = create_db(pathlib.Path(temp) / "catalog.db")
-        try:
-            counts = {s["id"]: ingest(db, s, fixture_dir) for s in sources}
-            db.commit()
-            manifest = generate(db, output_dir, counts, page_size)
-        finally:
-            db.close()
-    print(f"Built {manifest['totalApps']} apps in {manifest['pageCount']} pages", flush=True)
-    return manifest
+def validate_source(source):
+    if not isinstance(source, dict):
+        raise ValueError("Source must be an object")
+    if not isinstance(source.get("id"), str) or not re.fullmatch("[a-z0-9][a-z0-9-]{0,62}", source["id"]):
+        raise ValueError("Invalid source ID")
+    url = source.get("url")
+    if not isinstance(url, str) or urlsplit(url).scheme != "https" or not urlsplit(url).netloc:
+        raise ValueError("Sources require HTTPS URLs")
+
+
+def build(config_path=None, output=None, fixtures=None):
+    config_path = pathlib.Path(config_path or ROOT / "sources.json")
+    output = pathlib.Path(output or OUT)
+    sources = json.loads(config_path.read_text(encoding="utf-8"))["sources"]
+    sources = [s for s in sources if s.get("enabled", True)]
+    if not sources or len({s.get("id") for s in sources}) != len(sources):
+        raise ValueError("At least one source and unique source IDs required")
+    with tempfile.TemporaryDirectory() as tmp:
+        db = sqlite3.connect(os.path.join(tmp, "catalog.db"))
+        db.execute("CREATE TABLE apps(id TEXT PRIMARY KEY, title TEXT NOT NULL, card TEXT NOT NULL, detail TEXT NOT NULL)")
+        counts = {}
+        for source in sources:
+            validate_source(source)
+            used = 0
+            source_fixture = pathlib.Path(fixtures) / (source["id"] + ".json") if fixtures else None
+            db.execute("SAVEPOINT source")
+            for n, raw in enumerate(source_apps(source, source_fixture), start=1):
+                if n > MAX_APPS_PER_SOURCE:
+                    raise ValueError("Source exceeded app count limit")
+                app = normalize(source, raw)
+                if app:
+                    ident, title, card, detail = app
+                    db.execute("INSERT OR REPLACE INTO apps VALUES(?,?,?,?)", (
+                        ident, title, json.dumps(card, ensure_ascii=False),
+                        json.dumps(detail, ensure_ascii=False)))
+                    used += 1
+            if used == 0:
+                raise ValueError("Source has no usable apps: " + source["id"])
+            db.execute("RELEASE source")
+            counts[source["id"]] = used
+        db.commit()
+        total = db.execute("SELECT count(*) FROM apps").fetchone()[0]
+        pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+        cursor = db.execute("SELECT card,detail FROM apps ORDER BY title,id")
+        for page in range(pages):
+            rows = cursor.fetchmany(PAGE_SIZE)
+            cards, details = [], []
+            detail_path = f"details/{page:06d}.json"
+            for card_raw, detail_raw in rows:
+                card = json.loads(card_raw)
+                card["detailPath"] = detail_path
+                cards.append(card)
+                details.append(json.loads(detail_raw))
+            emit(output / f"pages/{page:06d}.json", {
+                "schemaVersion": 2, "page": page, "items": cards,
+                "next": f"{page+1:06d}" if page+1 < pages else None})
+            emit(output / detail_path, {"schemaVersion": 2, "page": page, "items": details})
+            if page == 0:
+                emit(output / "home.json", {"schemaVersion": 2, "items": cards})
+
+        # Static candidate search: group by first 3 characters of each name word.
+        # This is not a dynamic server-side search API.
+        db.execute("CREATE TABLE tokens(prefix TEXT, title TEXT, id TEXT, PRIMARY KEY(prefix,id)) WITHOUT ROWID")
+        for ident, title in db.execute("SELECT id,title FROM apps"):
+            for word in re.findall(r"\w+", title, flags=re.UNICODE):
+                if len(word) >= 3:
+                    db.execute("INSERT OR IGNORE INTO tokens VALUES(?,?,?)", (word[:3], title, ident))
+        db.execute("CREATE INDEX tokens_title ON tokens(prefix,title,id)")
+        search_index = {}
+        for prefix, count in db.execute("SELECT prefix,count(*) FROM tokens GROUP BY prefix"):
+            key = prefix.encode("utf-8").hex()
+            search_index[prefix] = {"key": key, "count": count, "pages": (count+PAGE_SIZE-1)//PAGE_SIZE}
+            results = db.execute("SELECT a.card FROM tokens t JOIN apps a ON a.id=t.id WHERE t.prefix=? ORDER BY t.title,t.id", (prefix,))
+            for page in range((count+PAGE_SIZE-1)//PAGE_SIZE):
+                emit(output / f"search/{key}/{page:06d}.json", {
+                    "schemaVersion": 2, "prefix": prefix, "page": page,
+                    "items": [json.loads(row[0]) for row in results.fetchmany(PAGE_SIZE)]})
+        emit(output / "search/index.json", {
+            "schemaVersion": 2, "minQueryLength": 3,
+            "type": "static-name-prefix-candidates", "buckets": search_index})
+        manifest = {
+            "schemaVersion": 2, "generatedAt": datetime.now(timezone.utc).isoformat(),
+            "totalApps": total, "pageSize": PAGE_SIZE, "pageCount": pages,
+            "homePath": "home.json", "pagePattern": "pages/{page:06d}.json",
+            "detailPattern": "details/{page:06d}.json",
+            "searchIndexPath": "search/index.json", "sources": counts}
+        emit(output / "manifest.json", manifest)
+        (output.parent / ".nojekyll").touch()
+        db.close()
+        print("Built", total, "apps /", pages, "pages /", len(search_index), "search buckets")
+        return manifest
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--sources", default=str(ROOT / "sources.json"))
-    parser.add_argument("--output", default=str(ROOT / "site"))
-    parser.add_argument("--page-size", type=int, default=PAGE_SIZE)
-    parser.add_argument("--fixture-dir", default=None)
-    options = parser.parse_args()
-    if not 20 <= options.page_size <= 500:
-        parser.error("page-size must be in range 20..500")
-    build(options.sources, options.output, options.page_size, options.fixture_dir)
+    build()
