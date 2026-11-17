@@ -102,6 +102,30 @@ class CatalogTests(unittest.TestCase):
             detail = json.loads((root / "site/api/details/000000.json").read_text())["items"][0]
             self.assertEqual(detail["downloadURL"], "https://example.test/new.ipa")
 
+    def test_distinct_mod_variants_survive_and_updates_collapse(self):
+        source = {"id": "ipaomtk", "url": "https://example.test/feed.json"}
+        def app(version, url, variant):
+            return {"name": "Demo", "bundleIdentifier": "com.example.demo",
+                    "version": version, "downloadURL": url,
+                    "versions": [{"version": version, "downloadURL": url,
+                                  "localizedDescription": "Upstream variant: " + variant}]}
+        regular_old = normalize(source, app("1.0", "https://example.test/a.ipa", "Original"))
+        regular_new = normalize(source, app("2.0", "https://example.test/b.ipa", "Original"))
+        modded = normalize(source, app("2.0", "https://example.test/c.ipa", "Premium"))
+        self.assertEqual(regular_old[0], regular_new[0])
+        self.assertNotEqual(regular_new[0], modded[0])
+
+    def test_missing_bundle_does_not_merge_unrelated_ipa_files(self):
+        source = {"id": "iosvizor", "url": "https://example.test/feed.json"}
+        a = normalize(source, {"name": "Same Name", "downloadURL": "https://example.test/a.ipa"})
+        b = normalize(source, {"name": "Same Name", "downloadURL": "https://example.test/b.ipa"})
+        self.assertIsNotNone(a)
+        self.assertNotEqual(a[0], b[0])
+
+    def test_other_sources_reject_missing_bundle(self):
+        self.assertIsNone(normalize({"id": "fixture", "url": "https://example.test/feed.json"},
+                                    {"name": "No Bundle", "downloadURL": "https://example.test/a.ipa"}))
+
     def test_bad_source_fails_without_empty_publish(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
