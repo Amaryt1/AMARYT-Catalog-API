@@ -52,7 +52,7 @@ def normalize(source, app):
     if not ipa:
         return None
     sid = source["id"]
-    app_id = hashlib.sha256((sid + "\0" + bundle.casefold()).encode()).hexdigest()[:24]
+    app_id = hashlib.sha256((sid + "\0" + bundle.casefold() + "\0" + name.casefold() + "\0" + ipa).encode()).hexdigest()[:24]
     icon = safe_url(app.get("iconURL"))
     version = clean(app.get("version") or latest.get("version"), 100)
     raw_screens = app.get("screenshotURLs") or []
