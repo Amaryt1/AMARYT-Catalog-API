@@ -47,7 +47,7 @@ def normalize(source, app):
         return None
     bundle = clean(app.get("bundleIdentifier") or app.get("bundleId"), 512)
     name = clean(app.get("name"), 256)
-    if not bundle or not name:
+    if not name:
         return None
     versions = app.get("versions") if isinstance(app.get("versions"), list) else []
     latest = next((v for v in versions if isinstance(v, dict) and v.get("downloadURL")), {})
@@ -55,6 +55,11 @@ def normalize(source, app):
     if not ipa:
         return None
     sid = source["id"]
+    # Missing bundle IDs: keep separate IPA variants rather than merging by name.
+    if not bundle:
+        if sid not in ("ipaomtk", "iosvizor"):
+            return None
+        bundle = "unknown." + hashlib.sha256(ipa.encode()).hexdigest()[:24]
     app_id = hashlib.sha256((sid + "\0" + bundle.casefold() + "\0" + normalize_word(name)).encode()).hexdigest()[:24]
     icon = safe_url(app.get("iconURL"))
     version = clean(app.get("version") or latest.get("version"), 100)
