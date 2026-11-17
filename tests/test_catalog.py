@@ -4,7 +4,7 @@ import pathlib
 import tempfile
 import unittest
 
-from scripts.build import build, normalize, norm
+from scripts.build import build, normalize, normalize_word
 from scripts.stream_json import iter_apps
 
 
@@ -21,7 +21,7 @@ class CatalogTests(unittest.TestCase):
         self.assertIsNone(normalize(source, {
             "name": "Bad", "bundleIdentifier": "com.bad", "downloadURL": "javascript:alert(1)"
         }))
-        self.assertEqual(norm("ÁPP Test"), "app test")
+        self.assertEqual(normalize_word("ÁPP Test"), "app test")
 
     def test_paging_details_search(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -33,12 +33,12 @@ class CatalogTests(unittest.TestCase):
                 {"name": "Application Demo", "bundleIdentifier": "com.example.demo",
                  "versions": [{"version": "2.0", "downloadURL": "https://example.test/demo.ipa"}]}
             ]}
-            (root / "fixture.test.json").write_text(json.dumps(feed))
+            (root / "fixture.json").write_text(json.dumps(feed))
             sources = root / "sources.json"
             sources.write_text(json.dumps({"sources": [{
                 "id": "fixture", "name": "Fixture", "url": "https://fixture.test/"
             }]}))
-            result = build(sources, root / "site", 20, fixture_dir=root)
+            result = build(config_path=sources, output=root / "site/api", fixtures=root)
             self.assertEqual(result["totalApps"], 2)
             api = root / "site/api"
             cards = json.loads((api / "pages/000000.json").read_text())["items"]
