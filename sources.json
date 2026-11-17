@@ -1,0 +1,9 @@
+{
+  "sources": [
+    {
+      "id": "apptesters",
+      "url": "https://repository.apptesters.org/",
+      "enabled": true
+    }
+  ]
+}
