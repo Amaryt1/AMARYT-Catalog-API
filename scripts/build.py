@@ -40,17 +40,17 @@ def safe_url(value):
 # Clean display-only descriptions across all feeds. Keep provenance, download URLs,
 # icon URLs and other functional metadata untouched.
 _SOURCE_NAMES = r"(?:IPAOMTK|iOSVizor|AppTesters|AltMaker|Ittza7aa|HeyFordy|IPA Library|Wuxu)"
-_URL_PATTERN = re.compile(r"(?i)(?:https?://|www\\.)[^\\s<>\\]\\[\\)\\(\\\"']+")
+_URL_PATTERN = re.compile(r"(?i)(?:https?://|www\.)[^\s<>\]\[\)\(\\"']+")
 _ATTRIBUTION_PATTERN = re.compile(
-    rf"(?im)^\\s*(?:(?:listed|provided|uploaded|shared|sourced|published)\\s+by|"
-    rf"(?:source|repository|repo|original app page|website|visit us|follow us)\\s*:)\\s*"
-    rf"{_SOURCE_NAMES}?(?:\\s*[:\\-]\\s*.*)?\\s*$"
+    rf"(?im)^\s*(?:(?:listed|provided|uploaded|shared|sourced|published)\s+by|"
+    rf"(?:source|repository|repo|original app page|website|visit us|follow us)\s*:)\s*"
+    rf"{_SOURCE_NAMES}?(?:\s*[:\-]\s*.*)?\s*$"
 )
 _INLINE_CREDIT = re.compile(
-    rf"(?i)\\s*(?:[.\\-]\\s*)?(?:listed|provided|uploaded|shared|sourced|published)\\s+by\\s+{_SOURCE_NAMES}\\s*[.!]?"
+    rf"(?i)\s*(?:[.\-]\s*)?(?:listed|provided|uploaded|shared|sourced|published)\s+by\s+{_SOURCE_NAMES}\s*[.!]?"
 )
-_ORIGINAL_PAGE = re.compile(r"(?i)\\s*(?:original app page|source url|repo url|website)\\s*:\\s*")
-_BLANK_LINES = re.compile(r"\\n{3,}")
+_ORIGINAL_PAGE = re.compile(r"(?i)\s*(?:original app page|source url|repo url|website)\s*:\s*")
+_BLANK_LINES = re.compile(r"\n{3,}")
 
 
 def clean_listing_description(value, limit=30000):
@@ -62,9 +62,9 @@ def clean_listing_description(value, limit=30000):
     description = _ORIGINAL_PAGE.sub(" ", description)
     description = _URL_PATTERN.sub("", description)
     description = _ATTRIBUTION_PATTERN.sub("", description)
-    lines = [line.strip(" \\t-:|") for line in description.splitlines()]
-    description = "\\n".join(line for line in lines if line)
-    return _BLANK_LINES.sub("\\n\\n", description).strip()
+    lines = [line.strip(" \t-:|") for line in description.splitlines()]
+    description = "\n".join(line for line in lines if line)
+    return _BLANK_LINES.sub("\n\n", description).strip()
 
 
 
