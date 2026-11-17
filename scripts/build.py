@@ -17,7 +17,7 @@ try:
 except ModuleNotFoundError:
     from stream_json import iter_apps
     from dedupe import rank
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.parse import urlsplit
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -238,6 +238,8 @@ def build(config_path=None, output=None, fixtures=None):
             raise ValueError("No usable apps from any configured source; refusing empty catalog publication")
         pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
         cursor = db.execute("SELECT card,detail FROM apps ORDER BY title,id")
+        recent_cards = []
+        recent_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         for page in range(pages):
             rows = cursor.fetchmany(PAGE_SIZE)
             cards, details = [], []
@@ -245,6 +247,15 @@ def build(config_path=None, output=None, fixtures=None):
             for card_raw, detail_raw in rows:
                 card = json.loads(card_raw)
                 card["detailPath"] = detail_path
+                raw_date = card.get("versionDate") or ""
+                try:
+                    parsed_date = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                    if parsed_date.tzinfo is None:
+                        parsed_date = parsed_date.replace(tzinfo=timezone.utc)
+                    if recent_cutoff <= parsed_date <= datetime.now(timezone.utc):
+                        recent_cards.append((parsed_date, card))
+                except (ValueError, TypeError, OverflowError):
+                    pass
                 cards.append(card)
                 details.append(json.loads(detail_raw))
             emit(output / f"pages/{page:06d}.json", {
@@ -253,6 +264,21 @@ def build(config_path=None, output=None, fixtures=None):
             emit(output / detail_path, {"schemaVersion": 2, "page": page, "items": details})
             if page == 0:
                 emit(output / "home.json", {"schemaVersion": 2, "items": cards})
+
+        # Date-sorted seven-day updates, independent of alphabetical catalog pages.
+        recent_cards.sort(key=lambda pair: (pair[0], pair[1]["id"]), reverse=True)
+        recent_total = len(recent_cards)
+        recent_pages = (recent_total + PAGE_SIZE - 1) // PAGE_SIZE
+        for page in range(recent_pages):
+            items = [card for _, card in recent_cards[page*PAGE_SIZE:(page+1)*PAGE_SIZE]]
+            emit(output / f"recent/{page:06d}.json", {
+                "schemaVersion": 2, "page": page, "items": items,
+                "next": f"{page+1:06d}" if page+1 < recent_pages else None})
+        emit(output / "recent/manifest.json", {
+            "schemaVersion": 2, "totalApps": recent_total,
+            "pageSize": PAGE_SIZE, "pageCount": recent_pages,
+            "pagePattern": "recent/{page:06d}.json"
+        })
 
         # Static candidate search: group by first 3 characters of each name word.
         # This is not a dynamic server-side search API.
