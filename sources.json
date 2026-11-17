@@ -39,6 +39,11 @@
       "id": "wuxu",
       "url": "https://wuxu1.github.io/wuxu-complete-plus.json",
       "enabled": true
+    },
+    {
+      "id": "ipavault",
+      "url": "https://repo.ipavault.app?type=sidestore",
+      "enabled": true
     }
   ]
 }
