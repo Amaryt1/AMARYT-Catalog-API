@@ -159,6 +159,7 @@ def build(config_path=None, output=None, fixtures=None):
         db.execute("CREATE TABLE apps(id TEXT PRIMARY KEY, title TEXT NOT NULL, card TEXT NOT NULL, detail TEXT NOT NULL)")
         counts = {}
         failures = {}
+        audit = {}
         for source in sources:
             validate_source(source)
             used = 0
@@ -198,8 +199,9 @@ def build(config_path=None, output=None, fixtures=None):
             unique_count = db.execute("SELECT COUNT(*) FROM apps").fetchone()[0] - before_count
             print(f"{source['id']}: raw={raw_seen}, valid={used}, unique={unique_count}", flush=True)
             counts[source["id"]] = unique_count
+            audit[source["id"]] = {"raw": raw_seen, "valid": used, "unique": unique_count, "deduplicatedWithinSource": used - unique_count}
         db.commit()
-        emit(output / "source-status.json", {"schemaVersion": 2, "active": counts, "failed": failures})
+        emit(output / "source-status.json", {"schemaVersion": 2, "active": counts, "failed": failures, "audit": audit, "totalUnique": sum(counts.values())})
         total = db.execute("SELECT count(*) FROM apps").fetchone()[0]
         if total == 0:
             raise ValueError("No usable apps from any configured source; refusing empty catalog publication")
